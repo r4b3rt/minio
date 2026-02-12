@@ -1,18 +1,19 @@
-/*
- * MinIO Cloud Storage, (C) 2018 MinIO, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (c) 2015-2021 MinIO, Inc.
+//
+// This file is part of MinIO Object Storage stack
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 package cmd
 
@@ -21,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"testing"
 )
 
@@ -44,10 +44,10 @@ type DummyDataGen struct {
 //
 // Given the function:
 //
-// f := func(r io.Reader) string {
-//           b, _ := ioutil.ReadAll(r)
-//           return string(b)
-// }
+//	f := func(r io.Reader) string {
+//	          b, _ := io.ReadAll(r)
+//	          return string(b)
+//	}
 //
 // for example, the following is true:
 //
@@ -60,11 +60,10 @@ func NewDummyDataGen(totalLength, skipOffset int64) io.ReadSeeker {
 		panic("Negative rotations are not allowed")
 	}
 
-	skipOffset = skipOffset % int64(len(alphabets))
-	as := make([]byte, 2*len(alphabets))
-	copy(as, alphabets)
-	copy(as[len(alphabets):], alphabets)
-	b := as[skipOffset : skipOffset+int64(len(alphabets))]
+	skipOffset %= int64(len(alphabets))
+	const multiply = 100
+	as := bytes.Repeat(alphabets, multiply)
+	b := as[skipOffset : skipOffset+int64(len(alphabets)*(multiply-1))]
 	return &DummyDataGen{
 		length: totalLength,
 		b:      b,
@@ -88,7 +87,7 @@ func (d *DummyDataGen) Read(b []byte) (n int, err error) {
 		}
 		err = io.EOF
 	}
-	return
+	return n, err
 }
 
 func (d *DummyDataGen) Seek(offset int64, whence int) (int64, error) {
@@ -114,7 +113,7 @@ func (d *DummyDataGen) Seek(offset int64, whence int) (int64, error) {
 
 func TestDummyDataGenerator(t *testing.T) {
 	readAll := func(r io.Reader) string {
-		b, _ := ioutil.ReadAll(r)
+		b, _ := io.ReadAll(r)
 		return string(b)
 	}
 	checkEq := func(a, b string) {
@@ -166,7 +165,7 @@ func TestCmpReaders(t *testing.T) {
 		r1 := bytes.NewReader([]byte("abc"))
 		r2 := bytes.NewReader([]byte("abc"))
 		ok, msg := cmpReaders(r1, r2)
-		if !(ok && msg == "") {
+		if !ok || msg != "" {
 			t.Fatalf("unexpected")
 		}
 	}

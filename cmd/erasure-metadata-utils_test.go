@@ -1,18 +1,19 @@
-/*
- * MinIO Cloud Storage, (C) 2015, 2016, 2017 MinIO, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (c) 2015-2021 MinIO, Inc.
+//
+// This file is part of MinIO Object Storage stack
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 package cmd
 
@@ -53,6 +54,10 @@ func TestDiskCount(t *testing.T) {
 // Test for reduceErrs, reduceErr reduces collection
 // of errors into a single maximal error with in the list.
 func TestReduceErrs(t *testing.T) {
+	canceledErrs := make([]error, 0, 5)
+	for i := range 5 {
+		canceledErrs = append(canceledErrs, fmt.Errorf("error %d: %w", i, context.Canceled))
+	}
 	// List all of all test cases to validate various cases of reduce errors.
 	testCases := []struct {
 		errs        []error
@@ -82,17 +87,23 @@ func TestReduceErrs(t *testing.T) {
 			errDiskNotFound,
 		}, []error{errDiskNotFound}, errVolumeNotFound},
 		{[]error{}, []error{}, errErasureReadQuorum},
-		{[]error{errFileNotFound, errFileNotFound, errFileNotFound,
-			errFileNotFound, errFileNotFound, nil, nil, nil, nil, nil},
-			nil, nil},
+		{
+			[]error{
+				errFileNotFound, errFileNotFound, errFileNotFound,
+				errFileNotFound, errFileNotFound, nil, nil, nil, nil, nil,
+			},
+			nil, nil,
+		},
+		// Checks if wrapped context cancellation errors are grouped as one.
+		{canceledErrs, nil, context.Canceled},
 	}
 	// Validates list of all the testcases for returning valid errors.
 	for i, testCase := range testCases {
-		gotErr := reduceReadQuorumErrs(context.Background(), testCase.errs, testCase.ignoredErrs, 5)
+		gotErr := reduceReadQuorumErrs(t.Context(), testCase.errs, testCase.ignoredErrs, 5)
 		if gotErr != testCase.err {
 			t.Errorf("Test %d : expected %s, got %s", i+1, testCase.err, gotErr)
 		}
-		gotNewErr := reduceWriteQuorumErrs(context.Background(), testCase.errs, testCase.ignoredErrs, 6)
+		gotNewErr := reduceWriteQuorumErrs(t.Context(), testCase.errs, testCase.ignoredErrs, 6)
 		if gotNewErr != errErasureWriteQuorum {
 			t.Errorf("Test %d : expected %s, got %s", i+1, errErasureWriteQuorum, gotErr)
 		}
@@ -137,7 +148,7 @@ func TestHashOrder(t *testing.T) {
 }
 
 func TestShuffleDisks(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	nDisks := 16
@@ -145,7 +156,7 @@ func TestShuffleDisks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	objLayer, _, err := initObjectLayer(ctx, mustGetPoolEndpoints(disks...))
+	objLayer, _, err := initObjectLayer(ctx, mustGetPoolEndpoints(0, disks...))
 	if err != nil {
 		removeRoots(disks)
 		t.Fatal(err)
@@ -185,7 +196,7 @@ func testShuffleDisks(t *testing.T, z *erasureServerPools) {
 
 // TestEvalDisks tests the behavior of evalDisks
 func TestEvalDisks(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	nDisks := 16
@@ -193,7 +204,7 @@ func TestEvalDisks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	objLayer, _, err := initObjectLayer(ctx, mustGetPoolEndpoints(disks...))
+	objLayer, _, err := initObjectLayer(ctx, mustGetPoolEndpoints(0, disks...))
 	if err != nil {
 		removeRoots(disks)
 		t.Fatal(err)
@@ -211,7 +222,7 @@ func Test_hashOrder(t *testing.T) {
 			var tmp [16]byte
 			rng.Read(tmp[:])
 			prefix := hex.EncodeToString(tmp[:])
-			for i := 0; i < 10000; i++ {
+			for range 10000 {
 				rng.Read(tmp[:])
 
 				y := hashOrder(fmt.Sprintf("%s/%x", prefix, hex.EncodeToString(tmp[:3])), x)

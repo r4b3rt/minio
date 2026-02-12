@@ -1,18 +1,19 @@
-/*
- * MinIO Cloud Storage, (C) 2016 MinIO, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (c) 2015-2021 MinIO, Inc.
+//
+// This file is part of MinIO Object Storage stack
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 package cmd
 
@@ -21,68 +22,13 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
-	"github.com/minio/minio/cmd/crypto"
-	xhttp "github.com/minio/minio/cmd/http"
+	"github.com/minio/minio/internal/crypto"
+	"github.com/minio/minio/internal/grid"
+	xhttp "github.com/minio/minio/internal/http"
 )
-
-// Tests getRedirectLocation function for all its criteria.
-func TestRedirectLocation(t *testing.T) {
-	testCases := []struct {
-		urlPath  string
-		location string
-	}{
-		{
-			// 1. When urlPath is '/minio'
-			urlPath:  minioReservedBucketPath,
-			location: minioReservedBucketPath + SlashSeparator,
-		},
-		{
-			// 2. When urlPath is '/'
-			urlPath:  SlashSeparator,
-			location: minioReservedBucketPath + SlashSeparator,
-		},
-		{
-			// 3. When urlPath is '/webrpc'
-			urlPath:  "/webrpc",
-			location: minioReservedBucketPath + "/webrpc",
-		},
-		{
-			// 4. When urlPath is '/login'
-			urlPath:  "/login",
-			location: minioReservedBucketPath + "/login",
-		},
-		{
-			// 5. When urlPath is '/favicon-16x16.png'
-			urlPath:  "/favicon-16x16.png",
-			location: minioReservedBucketPath + "/favicon-16x16.png",
-		},
-		{
-			// 6. When urlPath is '/favicon-16x16.png'
-			urlPath:  "/favicon-32x32.png",
-			location: minioReservedBucketPath + "/favicon-32x32.png",
-		},
-		{
-			// 7. When urlPath is '/favicon-96x96.png'
-			urlPath:  "/favicon-96x96.png",
-			location: minioReservedBucketPath + "/favicon-96x96.png",
-		},
-		{
-			// 8. When urlPath is '/unknown'
-			urlPath:  "/unknown",
-			location: "",
-		},
-	}
-
-	// Validate all conditions.
-	for i, testCase := range testCases {
-		loc := getRedirectLocation(testCase.urlPath)
-		if testCase.location != loc {
-			t.Errorf("Test %d: Unexpected location expected %s, got %s", i+1, testCase.location, loc)
-		}
-	}
-}
 
 // Tests request guess function for net/rpc requests.
 func TestGuessIsRPC(t *testing.T) {
@@ -106,37 +52,26 @@ func TestGuessIsRPC(t *testing.T) {
 	r = &http.Request{
 		Proto:  "HTTP/1.1",
 		Method: http.MethodGet,
+		URL:    u,
 	}
-	if guessIsRPCReq(r) {
-		t.Fatal("Test shouldn't report as net/rpc for a non net/rpc request.")
-	}
-}
-
-// Tests browser request guess function.
-func TestGuessIsBrowser(t *testing.T) {
-	globalBrowserEnabled = true
-	if guessIsBrowserReq(nil) {
-		t.Fatal("Unexpected return for nil request")
-	}
-	r := &http.Request{
-		Header: http.Header{},
-		URL:    &url.URL{},
-	}
-	r.Header.Set("User-Agent", "Mozilla")
-	if !guessIsBrowserReq(r) {
-		t.Fatal("Test shouldn't fail for a possible browser request anonymous user")
-	}
-	r.Header.Set("Authorization", "Bearer token")
-	if !guessIsBrowserReq(r) {
-		t.Fatal("Test shouldn't fail for a possible browser request JWT user")
+	if !guessIsRPCReq(r) {
+		t.Fatal("Test shouldn't fail for a possible net/rpc request.")
 	}
 	r = &http.Request{
-		Header: http.Header{},
-		URL:    &url.URL{},
+		Proto:  "HTTP/1.1",
+		Method: http.MethodGet,
+		URL:    &url.URL{Path: grid.RoutePath},
 	}
-	r.Header.Set("User-Agent", "mc")
-	if guessIsBrowserReq(r) {
-		t.Fatal("Test shouldn't report as browser for a non browser request.")
+	if !guessIsRPCReq(r) {
+		t.Fatal("Grid RPC path not detected")
+	}
+	r = &http.Request{
+		Proto:  "HTTP/1.1",
+		Method: http.MethodGet,
+		URL:    &url.URL{Path: grid.RouteLockPath},
+	}
+	if !guessIsRPCReq(r) {
+		t.Fatal("Grid RPC path not detected")
 	}
 }
 
@@ -155,7 +90,7 @@ var isHTTPHeaderSizeTooLargeTests = []struct {
 
 func generateHeader(size, usersize int) http.Header {
 	header := http.Header{}
-	for i := 0; i < size; i++ {
+	for i := range size {
 		header.Set(strconv.Itoa(i), "")
 	}
 	userlength := 0
@@ -183,15 +118,15 @@ var containsReservedMetadataTests = []struct {
 	},
 	{
 		header:     http.Header{crypto.MetaIV: []string{"iv"}},
-		shouldFail: true,
+		shouldFail: false,
 	},
 	{
 		header:     http.Header{crypto.MetaAlgorithm: []string{crypto.InsecureSealAlgorithm}},
-		shouldFail: true,
+		shouldFail: false,
 	},
 	{
 		header:     http.Header{crypto.MetaSealedKeySSEC: []string{"mac"}},
-		shouldFail: true,
+		shouldFail: false,
 	},
 	{
 		header:     http.Header{ReservedMetadataPrefix + "Key": []string{"value"}},
@@ -201,7 +136,6 @@ var containsReservedMetadataTests = []struct {
 
 func TestContainsReservedMetadata(t *testing.T) {
 	for _, test := range containsReservedMetadataTests {
-		test := test
 		t.Run("", func(t *testing.T) {
 			contains := containsReservedMetadata(test.header)
 			if contains && !test.shouldFail {
@@ -239,7 +173,7 @@ func TestSSETLSHandler(t *testing.T) {
 		r.Header = test.Header
 		r.URL = test.URL
 
-		h := setSSETLSHandler(okHandler)
+		h := setRequestValidityMiddleware(okHandler)
 		h.ServeHTTP(w, r)
 
 		switch {
@@ -248,5 +182,29 @@ func TestSSETLSHandler(t *testing.T) {
 		case !test.ShouldFail && w.Code != http.StatusOK:
 			t.Errorf("Test %d: should not fail but status code is HTTP %d and not 200 OK", i, w.Code)
 		}
+	}
+}
+
+func Benchmark_hasBadPathComponent(t *testing.B) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{name: "empty", input: "", want: false},
+		{name: "backslashes", input: `\a\a\ \\  \\\\\\\`, want: false},
+		{name: "long", input: strings.Repeat("a/", 2000), want: false},
+		{name: "long-fail", input: strings.Repeat("a/", 2000) + "../..", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(b *testing.B) {
+			b.SetBytes(int64(len(tt.input)))
+			b.ReportAllocs()
+			for b.Loop() {
+				if got := hasBadPathComponent(tt.input); got != tt.want {
+					t.Fatalf("hasBadPathComponent() = %v, want %v", got, tt.want)
+				}
+			}
+		})
 	}
 }

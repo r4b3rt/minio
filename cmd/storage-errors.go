@@ -1,55 +1,71 @@
-/*
- * MinIO Cloud Storage, (C) 2015-2020 MinIO, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (c) 2015-2023 MinIO, Inc.
+//
+// This file is part of MinIO Object Storage stack
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 package cmd
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
+
+// errMaxVersionsExceeded return error beyond 10000 (default) versions per object
+var errMaxVersionsExceeded = StorageErr("maximum versions exceeded, please delete few versions to proceed")
 
 // errUnexpected - unexpected error, requires manual intervention.
 var errUnexpected = StorageErr("unexpected error, please report this issue at https://github.com/minio/minio/issues")
 
-// errCorruptedFormat - corrupted backend format.
-var errCorruptedFormat = StorageErr("corrupted backend format, specified disk mount has unexpected previous content")
+// errCorruptedFormat - corrupted format.
+var errCorruptedFormat = StorageErr("corrupted format")
+
+// errCorruptedBackend - corrupted backend.
+var errCorruptedBackend = StorageErr("corrupted backend")
 
 // errUnformattedDisk - unformatted disk found.
-var errUnformattedDisk = StorageErr("unformatted disk found")
+var errUnformattedDisk = StorageErr("unformatted drive found")
 
 // errInconsistentDisk - inconsistent disk found.
-var errInconsistentDisk = StorageErr("inconsistent disk found")
+var errInconsistentDisk = StorageErr("inconsistent drive found")
 
 // errUnsupporteDisk - when disk does not support O_DIRECT flag.
-var errUnsupportedDisk = StorageErr("disk does not support O_DIRECT")
+var errUnsupportedDisk = StorageErr("drive does not support O_DIRECT")
 
 // errDiskFull - cannot create volume or files when disk is full.
-var errDiskFull = StorageErr("disk path full")
+var errDiskFull = StorageErr("drive path full")
 
 // errDiskNotDir - cannot use storage disk if its not a directory
-var errDiskNotDir = StorageErr("disk is not directory or mountpoint")
+var errDiskNotDir = StorageErr("drive is not directory or mountpoint")
 
 // errDiskNotFound - cannot find the underlying configured disk anymore.
-var errDiskNotFound = StorageErr("disk not found")
+var errDiskNotFound = StorageErr("drive not found")
+
+// errDiskOngoingReq - indicates if the disk has an on-going request in progress.
+var errDiskOngoingReq = StorageErr("drive still did not complete the request")
+
+// errDriveIsRoot - cannot use the disk since its a root disk.
+var errDriveIsRoot = StorageErr("drive is part of root drive, will not be used")
 
 // errFaultyRemoteDisk - remote disk is faulty.
-var errFaultyRemoteDisk = StorageErr("remote disk is faulty")
+var errFaultyRemoteDisk = StorageErr("remote drive is faulty")
 
 // errFaultyDisk - disk is faulty.
-var errFaultyDisk = StorageErr("disk is faulty")
+var errFaultyDisk = StorageErr("drive is faulty")
 
 // errDiskAccessDenied - we don't have write permissions on disk.
-var errDiskAccessDenied = StorageErr("disk access denied")
+var errDiskAccessDenied = StorageErr("drive access denied")
 
 // errFileNotFound - cannot find the file.
 var errFileNotFound = StorageErr("file not found")
@@ -87,18 +103,12 @@ var errFileAccessDenied = StorageErr("file access denied")
 // errFileCorrupt - file has an unexpected size, or is not readable
 var errFileCorrupt = StorageErr("file is corrupted")
 
-// errFileParentIsFile - cannot have overlapping objects, parent is already a file.
-var errFileParentIsFile = StorageErr("parent is a file")
-
 // errBitrotHashAlgoInvalid - the algo for bit-rot hash
 // verification is empty or invalid.
 var errBitrotHashAlgoInvalid = StorageErr("bit-rot hash algorithm is invalid")
 
 // errCrossDeviceLink - rename across devices not allowed.
 var errCrossDeviceLink = StorageErr("Rename across devices not allowed, please fix your backend configuration")
-
-// errMinDiskSize - cannot create volume or files when disk size is less than threshold.
-var errMinDiskSize = StorageErr("The disk size is less than 900MiB threshold")
 
 // errLessData - returned when less data available than what was requested.
 var errLessData = StorageErr("less data available than what was requested")
@@ -112,6 +122,11 @@ var errDoneForNow = errors.New("done for now")
 // errSkipFile returned by the fn() for readDirFn() when it needs
 // to proceed to next entry.
 var errSkipFile = errors.New("skip this file")
+
+var errIgnoreFileContrib = errors.New("ignore this file's contribution toward data-usage")
+
+// errXLBackend XL drive mode requires fresh deployment.
+var errXLBackend = errors.New("XL backend requires fresh drive")
 
 // StorageErr represents error generated by xlStorage call.
 type StorageErr string
@@ -159,7 +174,11 @@ func osErrToFileErr(err error) error {
 		return errFaultyDisk
 	}
 	if isSysErrInvalidArg(err) {
-		return errUnsupportedDisk
+		storageLogIf(context.Background(), err)
+		// For some odd calls with O_DIRECT reads
+		// filesystems can return EINVAL, handle
+		// these as FileNotFound instead.
+		return errFileNotFound
 	}
 	if isSysErrNoSpace(err) {
 		return errDiskFull

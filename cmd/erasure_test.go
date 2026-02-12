@@ -1,27 +1,26 @@
-/*
- * MinIO Cloud Storage, (C) 2016-2020 MinIO, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (c) 2015-2021 MinIO, Inc.
+//
+// This file is part of MinIO Object Storage stack
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 package cmd
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"io"
-	"os"
 	"testing"
 )
 
@@ -52,11 +51,11 @@ func TestErasureEncodeDecode(t *testing.T) {
 		buffer := make([]byte, len(data), 2*len(data))
 		copy(buffer, data)
 
-		erasure, err := NewErasure(context.Background(), test.dataBlocks, test.parityBlocks, blockSizeV2)
+		erasure, err := NewErasure(t.Context(), test.dataBlocks, test.parityBlocks, blockSizeV2)
 		if err != nil {
 			t.Fatalf("Test %d: failed to create erasure: %v", i, err)
 		}
-		encoded, err := erasure.EncodeData(context.Background(), buffer)
+		encoded, err := erasure.EncodeData(t.Context(), buffer)
 		if err != nil {
 			t.Fatalf("Test %d: failed to encode data: %v", i, err)
 		}
@@ -69,7 +68,7 @@ func TestErasureEncodeDecode(t *testing.T) {
 		}
 
 		if test.reconstructParity {
-			err = erasure.DecodeDataAndParityBlocks(context.Background(), encoded)
+			err = erasure.DecodeDataAndParityBlocks(t.Context(), encoded)
 		} else {
 			err = erasure.DecodeDataBlocks(encoded)
 		}
@@ -98,7 +97,7 @@ func TestErasureEncodeDecode(t *testing.T) {
 			}
 
 			decodedData := new(bytes.Buffer)
-			if _, err = writeDataBlocks(context.Background(), decodedData, decoded, test.dataBlocks, 0, int64(len(data))); err != nil {
+			if _, err = writeDataBlocks(t.Context(), decodedData, decoded, test.dataBlocks, 0, int64(len(data))); err != nil {
 				t.Errorf("Test %d: failed to write data blocks: %v", i, err)
 			}
 			if !bytes.Equal(decodedData.Bytes(), data) {
@@ -117,24 +116,17 @@ type erasureTestSetup struct {
 	disks        []StorageAPI
 }
 
-// Removes the temporary disk directories.
-func (e erasureTestSetup) Remove() {
-	for _, path := range e.diskPaths {
-		os.RemoveAll(path)
-	}
-}
-
 // Returns an initialized setup for erasure tests.
-func newErasureTestSetup(dataBlocks int, parityBlocks int, blockSize int64) (*erasureTestSetup, error) {
+func newErasureTestSetup(tb testing.TB, dataBlocks int, parityBlocks int, blockSize int64) (*erasureTestSetup, error) {
 	diskPaths := make([]string, dataBlocks+parityBlocks)
 	disks := make([]StorageAPI, len(diskPaths))
 	var err error
 	for i := range diskPaths {
-		disks[i], diskPaths[i], err = newXLStorageTestSetup()
+		disks[i], diskPaths[i], err = newXLStorageTestSetup(tb)
 		if err != nil {
 			return nil, err
 		}
-		err = disks[i].MakeVol(context.Background(), "testbucket")
+		err = disks[i].MakeVol(tb.Context(), "testbucket")
 		if err != nil {
 			return nil, err
 		}

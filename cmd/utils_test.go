@@ -1,30 +1,28 @@
-/*
- * MinIO Cloud Storage, (C) 2016, 2017 MinIO, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (c) 2015-2021 MinIO, Inc.
+//
+// This file is part of MinIO Object Storage stack
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -165,7 +163,6 @@ func TestPath2BucketObjectName(t *testing.T) {
 
 	// Validate all test cases.
 	for _, testCase := range testCases {
-		testCase := testCase
 		t.Run("", func(t *testing.T) {
 			bucketName, objectName := path2BucketObject(testCase.path)
 			if bucketName != testCase.bucket {
@@ -237,9 +234,8 @@ func TestDumpRequest(t *testing.T) {
 		RequestURI string      `json:"reqURI"`
 		Header     http.Header `json:"header"`
 	}
-	jsonReq = strings.Replace(jsonReq, "%%", "%", -1)
 	res := jsonResult{}
-	if err = json.Unmarshal([]byte(jsonReq), &res); err != nil {
+	if err = json.Unmarshal([]byte(strings.ReplaceAll(jsonReq, "%%", "%")), &res); err != nil {
 		t.Fatal(err)
 	}
 
@@ -290,86 +286,6 @@ func TestToS3ETag(t *testing.T) {
 	}
 }
 
-// Test contains
-func TestContains(t *testing.T) {
-
-	testErr := errors.New("test err")
-
-	testCases := []struct {
-		slice interface{}
-		elem  interface{}
-		found bool
-	}{
-		{nil, nil, false},
-		{"1", "1", false},
-		{nil, "1", false},
-		{[]string{"1"}, nil, false},
-		{[]string{}, "1", false},
-		{[]string{"1"}, "1", true},
-		{[]string{"2"}, "1", false},
-		{[]string{"1", "2"}, "1", true},
-		{[]string{"2", "1"}, "1", true},
-		{[]string{"2", "1", "3"}, "1", true},
-		{[]int{1, 2, 3}, "1", false},
-		{[]int{1, 2, 3}, 2, true},
-		{[]int{1, 2, 3, 4, 5, 6}, 7, false},
-		{[]error{errors.New("new err")}, testErr, false},
-		{[]error{errors.New("new err"), testErr}, testErr, true},
-	}
-
-	for i, testCase := range testCases {
-		found := contains(testCase.slice, testCase.elem)
-		if found != testCase.found {
-			t.Fatalf("Test %v: expected: %v, got: %v", i+1, testCase.found, found)
-		}
-	}
-}
-
-// Test jsonLoad.
-func TestJSONLoad(t *testing.T) {
-	format := newFormatFSV1()
-	b, err := json.Marshal(format)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var gotFormat formatFSV1
-	if err = jsonLoad(bytes.NewReader(b), &gotFormat); err != nil {
-		t.Fatal(err)
-	}
-	if *format != gotFormat {
-		t.Fatal("jsonLoad() failed to decode json")
-	}
-}
-
-// Test jsonSave.
-func TestJSONSave(t *testing.T) {
-	f, err := ioutil.TempFile("", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(f.Name())
-
-	// Test to make sure formatFSSave overwrites and does not append.
-	format := newFormatFSV1()
-	if err = jsonSave(f, format); err != nil {
-		t.Fatal(err)
-	}
-	fi1, err := f.Stat()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = jsonSave(f, format); err != nil {
-		t.Fatal(err)
-	}
-	fi2, err := f.Stat()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fi1.Size() != fi2.Size() {
-		t.Fatal("Size should not differs after jsonSave()", fi1.Size(), fi2.Size(), f.Name())
-	}
-}
-
 // Test ceilFrac
 func TestCeilFrac(t *testing.T) {
 	cases := []struct {
@@ -397,9 +313,8 @@ func TestCeilFrac(t *testing.T) {
 
 // Test if isErrIgnored works correctly.
 func TestIsErrIgnored(t *testing.T) {
-	var errIgnored = fmt.Errorf("ignored error")
-	ignoredErrs := append(baseIgnoredErrs, errIgnored)
-	var testCases = []struct {
+	errIgnored := fmt.Errorf("ignored error")
+	testCases := []struct {
 		err     error
 		ignored bool
 	}{
@@ -417,7 +332,7 @@ func TestIsErrIgnored(t *testing.T) {
 		},
 	}
 	for i, testCase := range testCases {
-		if ok := IsErrIgnored(testCase.err, ignoredErrs...); ok != testCase.ignored {
+		if ok := IsErrIgnored(testCase.err, append(baseIgnoredErrs, errIgnored)...); ok != testCase.ignored {
 			t.Errorf("Test: %d, Expected %t, got %t", i+1, testCase.ignored, ok)
 		}
 	}
@@ -425,7 +340,7 @@ func TestIsErrIgnored(t *testing.T) {
 
 // Test queries()
 func TestQueries(t *testing.T) {
-	var testCases = []struct {
+	testCases := []struct {
 		keys      []string
 		keyvalues []string
 	}{
@@ -446,7 +361,7 @@ func TestQueries(t *testing.T) {
 }
 
 func TestLCP(t *testing.T) {
-	var testCases = []struct {
+	testCases := []struct {
 		prefixes     []string
 		commonPrefix string
 	}{
@@ -482,8 +397,4 @@ func TestGetMinioMode(t *testing.T) {
 
 	globalIsDistErasure, globalIsErasure = false, false
 	testMinioMode(globalMinioModeFS)
-
-	globalIsGateway, globalGatewayName = true, "azure"
-	testMinioMode(globalMinioModeGatewayPrefix + globalGatewayName)
-
 }

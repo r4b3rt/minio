@@ -1,24 +1,29 @@
-/*
- * MinIO Cloud Storage, (C) 2017 MinIO, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (c) 2015-2021 MinIO, Inc.
+//
+// This file is part of MinIO Object Storage stack
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 package cmd
 
 import (
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/klauspost/compress/gzhttp"
 )
 
 // Tests object location.
@@ -99,7 +104,6 @@ func TestObjectLocation(t *testing.T) {
 		},
 	}
 	for _, testCase := range testCases {
-		testCase := testCase
 		t.Run("", func(t *testing.T) {
 			gotLocation := getObjectLocation(testCase.request, testCase.domains, testCase.bucket, testCase.object)
 			if testCase.expectedLocation != gotLocation {
@@ -120,5 +124,91 @@ func TestGetURLScheme(t *testing.T) {
 	gotScheme = getURLScheme(tls)
 	if gotScheme != httpsScheme {
 		t.Errorf("Expected %s, got %s", httpsScheme, gotScheme)
+	}
+}
+
+func TestTrackingResponseWriter(t *testing.T) {
+	rw := httptest.NewRecorder()
+	trw := &trackingResponseWriter{ResponseWriter: rw}
+	trw.WriteHeader(123)
+	if !trw.headerWritten {
+		t.Fatal("headerWritten was not set by WriteHeader call")
+	}
+
+	_, err := trw.Write([]byte("hello"))
+	if err != nil {
+		t.Fatalf("Write unexpectedly failed: %v", err)
+	}
+
+	// Check that WriteHeader and Write were called on the underlying response writer
+	resp := rw.Result()
+	if resp.StatusCode != 123 {
+		t.Fatalf("unexpected status: %v", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading response body failed: %v", err)
+	}
+	if string(body) != "hello" {
+		t.Fatalf("response body incorrect: %v", string(body))
+	}
+
+	// Check that Unwrap works
+	if trw.Unwrap() != rw {
+		t.Fatalf("Unwrap returned wrong result: %v", trw.Unwrap())
+	}
+}
+
+func TestHeadersAlreadyWritten(t *testing.T) {
+	rw := httptest.NewRecorder()
+	trw := &trackingResponseWriter{ResponseWriter: rw}
+
+	if headersAlreadyWritten(trw) {
+		t.Fatal("headers have not been written yet")
+	}
+
+	trw.WriteHeader(123)
+	if !headersAlreadyWritten(trw) {
+		t.Fatal("headers were written")
+	}
+}
+
+func TestHeadersAlreadyWrittenWrapped(t *testing.T) {
+	rw := httptest.NewRecorder()
+	trw := &trackingResponseWriter{ResponseWriter: rw}
+	wrap1 := &gzhttp.NoGzipResponseWriter{ResponseWriter: trw}
+	wrap2 := &gzhttp.NoGzipResponseWriter{ResponseWriter: wrap1}
+
+	if headersAlreadyWritten(wrap2) {
+		t.Fatal("headers have not been written yet")
+	}
+
+	wrap2.WriteHeader(123)
+	if !headersAlreadyWritten(wrap2) {
+		t.Fatal("headers were written")
+	}
+}
+
+func TestWriteResponseHeadersNotWritten(t *testing.T) {
+	rw := httptest.NewRecorder()
+	trw := &trackingResponseWriter{ResponseWriter: rw}
+
+	writeResponse(trw, 299, []byte("hello"), "application/foo")
+
+	resp := rw.Result()
+	if resp.StatusCode != 299 {
+		t.Fatal("response wasn't written")
+	}
+}
+
+func TestWriteResponseHeadersWritten(t *testing.T) {
+	rw := httptest.NewRecorder()
+	rw.Code = -1
+	trw := &trackingResponseWriter{ResponseWriter: rw, headerWritten: true}
+
+	writeResponse(trw, 200, []byte("hello"), "application/foo")
+
+	if rw.Code != -1 {
+		t.Fatalf("response was written when it shouldn't have been (Code=%v)", rw.Code)
 	}
 }

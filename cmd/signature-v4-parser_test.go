@@ -1,18 +1,19 @@
-/*
- * MinIO Cloud Storage, (C) 2016, 2017 MinIO, Inc.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+// Copyright (c) 2015-2021 MinIO, Inc.
+//
+// This file is part of MinIO Object Storage stack
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 package cmd
 
@@ -36,7 +37,8 @@ func joinWithSlash(accessKey, date, region, service, requestVersion string) stri
 		date,
 		region,
 		service,
-		requestVersion}, SlashSeparator)
+		requestVersion,
+	}, SlashSeparator)
 }
 
 // generate CredentialHeader from its fields.
@@ -58,7 +60,6 @@ func generateCredentials(t *testing.T, accessKey string, date string, region, se
 
 // validates the credential fields against the expected credential.
 func validateCredentialfields(t *testing.T, testNum int, expectedCredentials credentialHeader, actualCredential credentialHeader) {
-
 	if expectedCredentials.accessKey != actualCredential.accessKey {
 		t.Errorf("Test %d: AccessKey mismatch: Expected \"%s\", got \"%s\"", testNum, expectedCredentials.accessKey, actualCredential.accessKey)
 	}
@@ -78,15 +79,15 @@ func validateCredentialfields(t *testing.T, testNum int, expectedCredentials cre
 }
 
 // TestParseCredentialHeader - validates the format validator and extractor for the Credential header in an aws v4 request.
-// A valid format of creadential should be of the following format.
+// A valid format of credential should be of the following format.
 // Credential = accessKey + SlashSeparator+ scope
 // where scope = string.Join([]string{  currTime.Format(yyyymmdd),
-// 			globalMinioDefaultRegion,
-//               	"s3",
-//		        "aws4_request",
-//                       },SlashSeparator)
+//
+//				globalMinioDefaultRegion,
+//	              	"s3",
+//			        "aws4_request",
+//	                      },SlashSeparator)
 func TestParseCredentialHeader(t *testing.T) {
-
 	sampleTimeStr := UTCNow().Format(yyyymmdd)
 
 	testCases := []struct {
@@ -235,6 +236,25 @@ func TestParseCredentialHeader(t *testing.T) {
 				"aws4_request"),
 			expectedErrCode: ErrNone,
 		},
+		// Test Case - 12.
+		// Test case with right inputs but trailing `/`. Expected to return a valid CredentialHeader.
+		// "aws4_request" is the valid request version.
+		{
+			inputCredentialStr: generateCredentialStr(
+				"Z7IXGOO6BZ0REAN1Q26I",
+				sampleTimeStr,
+				"us-west-1",
+				"s3",
+				"aws4_request/"),
+			expectedCredentials: generateCredentials(
+				t,
+				"Z7IXGOO6BZ0REAN1Q26I",
+				sampleTimeStr,
+				"us-west-1",
+				"s3",
+				"aws4_request"),
+			expectedErrCode: ErrNone,
+		},
 	}
 
 	for i, testCase := range testCases {
@@ -257,7 +277,7 @@ func TestParseSignature(t *testing.T) {
 		expectedErrCode  APIErrorCode
 	}{
 		// Test case - 1.
-		// SignElemenet doesn't have 2 parts on an attempt to split at '='.
+		// SignElement doesn't have 2 parts on an attempt to split at '='.
 		// ErrMissingFields expected.
 		{
 			inputSignElement: "Signature",
@@ -273,7 +293,7 @@ func TestParseSignature(t *testing.T) {
 			expectedErrCode:  ErrMissingFields,
 		},
 		// Test case - 3.
-		// SignElemenet with missing "SignatureTag",ErrMissingSignTag expected.
+		// SignElement with missing "SignatureTag",ErrMissingSignTag expected.
 		{
 			inputSignElement: "Sign=",
 			expectedSignStr:  "",
@@ -295,10 +315,8 @@ func TestParseSignature(t *testing.T) {
 		if actualErrCode == ErrNone {
 			if testCase.expectedSignStr != actualSignStr {
 				t.Errorf("Test %d: Expected the result to be \"%s\", but got \"%s\". ", i+1, testCase.expectedSignStr, actualSignStr)
-
 			}
 		}
-
 	}
 }
 
@@ -310,7 +328,7 @@ func TestParseSignedHeaders(t *testing.T) {
 		expectedErrCode       APIErrorCode
 	}{
 		// Test case - 1.
-		// SignElemenet doesn't have 2 parts on an attempt to split at '='.
+		// SignElement doesn't have 2 parts on an attempt to split at '='.
 		// ErrMissingFields expected.
 		{
 			inputSignElement:      "SignedHeaders",
@@ -318,7 +336,7 @@ func TestParseSignedHeaders(t *testing.T) {
 			expectedErrCode:       ErrMissingFields,
 		},
 		// Test case - 2.
-		// SignElemenet with missing "SigHeaderTag",ErrMissingSignHeadersTag expected.
+		// SignElement with missing "SigHeaderTag",ErrMissingSignHeadersTag expected.
 		{
 			inputSignElement:      "Sign=",
 			expectedSignedHeaders: nil,
@@ -341,10 +359,8 @@ func TestParseSignedHeaders(t *testing.T) {
 		if actualErrCode == ErrNone {
 			if strings.Join(testCase.expectedSignedHeaders, ",") != strings.Join(actualSignedHeaders, ",") {
 				t.Errorf("Test %d: Expected the result to be \"%v\", but got \"%v\". ", i+1, testCase.expectedSignedHeaders, actualSignedHeaders)
-
 			}
 		}
-
 	}
 }
 
@@ -388,7 +404,7 @@ func TestParseSignV4(t *testing.T) {
 		},
 		// Test case - 5.
 		// Auth field with missing "SigHeaderTag",ErrMissingSignHeadersTag expected.
-		// A vaild credential is generated.
+		// A valid credential is generated.
 		// Test case with invalid credential field.
 		{
 			inputV4AuthStr: signV4Algorithm +
@@ -410,7 +426,7 @@ func TestParseSignV4(t *testing.T) {
 		},
 		// Test case - 6.
 		// Auth string with missing "SignatureTag",ErrMissingSignTag expected.
-		// A vaild credential is generated.
+		// A valid credential is generated.
 		// Test case with invalid credential field.
 		{
 			inputV4AuthStr: signV4Algorithm +
@@ -515,9 +531,7 @@ func TestParseSignV4(t *testing.T) {
 				t.Errorf("Test %d: Expected the result to be \"%v\", but got \"%v\". ", i+1, testCase.expectedAuthField, parsedAuthField.SignedHeaders)
 			}
 		}
-
 	}
-
 }
 
 // TestDoesV4PresignParamsExist - tests validate the logic to
@@ -618,7 +632,6 @@ func TestDoesV4PresignParamsExist(t *testing.T) {
 		inputQuery := url.Values{}
 		// iterating through input query key value and setting the inputQuery of type url.Values.
 		for j := 0; j < len(testCase.inputQueryKeyVals)-1; j += 2 {
-
 			inputQuery.Set(testCase.inputQueryKeyVals[j], testCase.inputQueryKeyVals[j+1])
 		}
 
@@ -628,15 +641,13 @@ func TestDoesV4PresignParamsExist(t *testing.T) {
 			t.Fatalf("Test %d: Expected the APIErrCode to be %d, got %d", i+1, testCase.expectedErrCode, actualErrCode)
 		}
 	}
-
 }
 
 // TestParsePreSignV4 - Validates the parsing logic of Presignied v4 request from its url query values.
 func TestParsePreSignV4(t *testing.T) {
 	// converts the duration in seconds into string format.
-	getDurationStr := func(expires int) string {
-		return strconv.Itoa(expires)
-	}
+	getDurationStr := strconv.Itoa
+
 	// used in expected preSignValues, preSignValues.Date is of type time.Time .
 	queryTime := UTCNow()
 
@@ -667,7 +678,6 @@ func TestParsePreSignV4(t *testing.T) {
 		// The other query params should exist, other wise ErrInvalidQueryParams will be returned because of missing fields.
 		{
 			inputQueryKeyVals: []string{
-
 				"X-Amz-Algorithm", "InvalidValue",
 				"X-Amz-Credential", "",
 				"X-Amz-Signature", "",
@@ -886,6 +896,5 @@ func TestParsePreSignV4(t *testing.T) {
 				t.Errorf("Test %d: Expected date to be %v, but got %v", i+1, testCase.expectedPreSignValues.Date.UTC().Format(iso8601Format), parsedPreSign.Date.UTC().Format(iso8601Format))
 			}
 		}
-
 	}
 }
